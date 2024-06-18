@@ -1,23 +1,54 @@
-# resource "aws_ecs_task_definition" "taskdef" {
-#     family = "my-notification-service"
-#     network_mode = "awsvpc"
-#     cpu = 256
-#     memory = 512
+name: CI/CD Pipeline
 
-#    container_definitions = [
-#     {
-#       name = "my-notification-server"
-#       image = "your_ecr_repository_url:latest"
-#       essential = true
-#       portMappings = [
-#         {
-#           containerPort = 80,
-#           protocol = "tcp",
-#         }
-#       ]
-#       memory = 3
-#       cpu = 1
-#     }
-#    ]  
-# }
+on:
+  push:
+    branches:
+      - main
 
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: my-repository
+  ECS_CLUSTER: nodecluster
+  ECS_SERVICE: hellonodeservice
+  IMAGE_TAG: latest
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+      
+      - name: Push Docker image to Amazon ECR
+        run: |
+          docker push ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+
+      - name: Install Terraform
+        run: |
+          sudo apt-get update && sudo apt-get install -y software-properties-common
+          curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
+          sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
+          sudo apt-get update && sudo apt-get install terraform
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: Terraform Apply
+        run: terraform apply -auto-approve
+        working-directory: ./terraform
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
